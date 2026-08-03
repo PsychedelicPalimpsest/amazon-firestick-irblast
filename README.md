@@ -5,7 +5,7 @@ Native Home Assistant integration that turns a Fire Stick + Amazon Voice Remote 
 ## What you get
 
 - Config Flow (ADB host/port/adbkey like [androidtv](https://www.home-assistant.io/integrations/androidtv))
-- `media_player` (TV power, volume, mute, HDMI inputs) + `remote` (every function in the codeset)
+- `media_player` (TV power, volume, mute, HDMI inputs) + `remote` + `select` IR-button dropdown (every function in the codeset)
 - Live Amazon IDC TV catalog via a Stick-side Magisk agent (MAP token) — **no vendored IR dump**
 - Only the codeset you select is stored in the config entry
 - Pluggable TV state: DeviceControl screen/TV power (recommended), ping, HDMI HPD, HA entity, or assumed (last resort)
@@ -108,9 +108,48 @@ Toggle-only brands (e.g. many Vizio profiles) should use **toggle_with_state** p
 
 Sending IR never marks the TV on unless `assumed` is the chosen source.
 
+## Automations — press any IR button
+
+Three equivalent ways:
+
+### 1. Select dropdown (easiest in the UI)
+
+Entity `select.*_ir_button` lists every function in the codeset. Selecting an option blasts it.
+
+```yaml
+action: select.select_option
+target:
+  entity_id: select.vizio_tv_ir_button   # rename to your entity
+data:
+  option: HDMI_4
+```
+
+### 2. Remote entity
+
+```yaml
+action: remote.send_command
+target:
+  entity_id: remote.vizio_tv_tv_remote
+data:
+  command: VOLUME_UP
+```
+
+`command` can also be a list to send several buttons in order.
+
+### 3. Domain service
+
+```yaml
+action: firetv_ir.send_function
+data:
+  function: POWER_TOGGLE
+  entity_id: media_player.vizio_tv_tv
+```
+
+Use **Developer tools → States** on the remote or IR button select to see available function names (`options` / `functions` / `activity_list`).
+
 ## Services
 
-- `firetv_ir.send_function` — `function: HDMI_4` (optional `entry_id`)
+- `firetv_ir.send_function` — `function: HDMI_4` + target `entity_id` (or `entry_id`)
 - `firetv_ir.refresh_profile` — re-fetch codeset from IDC via Stick
 
 ## Layout

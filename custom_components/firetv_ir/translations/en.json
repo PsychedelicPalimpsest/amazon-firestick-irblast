@@ -68,6 +68,13 @@
       "already_configured": "This Fire Stick is already configured"
     }
   },
+  "entity": {
+    "select": {
+      "ir_button": {
+        "name": "IR button"
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {

@@ -1,18 +1,26 @@
 send_function:
   name: Send IR function
-  description: Blast a named function from the cached Amazon codeset (e.g. HDMI_4, VOLUME_UP).
+  description: >
+    Blast a named function from the cached Amazon codeset
+    (e.g. HDMI_4, VOLUME_UP, POWER_TOGGLE). Prefer targeting the remote,
+    media_player, or IR button select entity.
   fields:
     function:
+      name: Function
+      description: Codeset function name (see select.ir_button options or remote activity list).
       required: true
-      example: POWER_TOGGLE
+      example: HDMI_4
       selector:
         text:
     entity_id:
+      name: Target entity
+      description: Any firetv_ir entity (remote / media_player / select).
       required: false
       selector:
         entity:
           integration: firetv_ir
     entry_id:
+      name: Config entry id
       required: false
       selector:
         text:
@@ -21,7 +29,14 @@ refresh_profile:
   name: Refresh profile
   description: Re-download the selected TV codeset from Amazon IDC via the Stick.
   fields:
+    entity_id:
+      name: Target entity
+      required: false
+      selector:
+        entity:
+          integration: firetv_ir
     entry_id:
-      required: true
+      name: Config entry id
+      required: false
       selector:
         text:

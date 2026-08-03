@@ -9,7 +9,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
-from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 
 from .adb import AdbError, FireStickAdb
 from .agent import StickAgent
@@ -29,7 +33,7 @@ from .coordinator import FireTvIrCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.MEDIA_PLAYER, Platform.REMOTE]
+PLATFORMS = [Platform.MEDIA_PLAYER, Platform.REMOTE, Platform.SELECT]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -81,25 +85,49 @@ def _register_services(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, "send_function"):
         return
 
-    async def handle_send_function(call: ServiceCall) -> None:
-        function = call.data["function"]
+    def _coordinators_for_call(call: ServiceCall) -> list[FireTvIrCoordinator]:
         entry_id = call.data.get("entry_id")
-        coords = (
-            [hass.data[DOMAIN][entry_id]]
-            if entry_id
-            else list(hass.data[DOMAIN].values())
-        )
+        if entry_id:
+            coord = hass.data[DOMAIN].get(entry_id)
+            if not coord:
+                raise HomeAssistantError(f"Unknown entry_id: {entry_id}")
+            return [coord]
+
+        entity_ids = call.data.get("entity_id")
+        if entity_ids:
+            reg = er.async_get(hass)
+            found: list[FireTvIrCoordinator] = []
+            seen: set[str] = set()
+            for eid in entity_ids:
+                ent = reg.async_get(eid)
+                if not ent or ent.platform != DOMAIN or not ent.config_entry_id:
+                    continue
+                cid = ent.config_entry_id
+                if cid in seen:
+                    continue
+                coord = hass.data[DOMAIN].get(cid)
+                if coord:
+                    found.append(coord)
+                    seen.add(cid)
+            if not found:
+                raise HomeAssistantError(
+                    f"No Fire TV IR coordinator for entity_id={entity_ids}"
+                )
+            return found
+
+        coords = list(hass.data[DOMAIN].values())
         if not coords:
             raise HomeAssistantError("No Fire TV IR entries loaded")
-        for coord in coords:
+        return coords
+
+    async def handle_send_function(call: ServiceCall) -> None:
+        function = call.data["function"]
+        for coord in _coordinators_for_call(call):
             await coord.async_send_function(function)
 
     async def handle_refresh_profile(call: ServiceCall) -> None:
-        entry_id = call.data["entry_id"]
-        coord = hass.data[DOMAIN].get(entry_id)
-        if not coord:
-            raise HomeAssistantError(f"Unknown entry_id: {entry_id}")
-        await coord.async_refresh_profile()
+        for coord in _coordinators_for_call(call):
+            await coord.async_refresh_profile()
 
     hass.services.async_register(
         DOMAIN,
@@ -117,7 +145,12 @@ def _register_services(hass: HomeAssistant) -> None:
         DOMAIN,
         "refresh_profile",
         handle_refresh_profile,
-        schema=vol.Schema({vol.Required("entry_id"): cv.string}),
+        schema=vol.Schema(
+            {
+                vol.Optional("entity_id"): cv.entity_ids,
+                vol.Optional("entry_id"): cv.string,
+            }
+        ),
     )
 
 
