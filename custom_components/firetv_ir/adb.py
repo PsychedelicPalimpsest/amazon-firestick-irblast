@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from io import BytesIO
 from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
@@ -101,14 +102,43 @@ class FireStickAdb:
                 None, lambda: self._push_sync(local_path, remote_path)
             )
 
+    async def push_bytes(self, data: bytes, remote_path: str) -> None:
+        """Push in-memory bytes (BytesIO) — never pass an open file handle to adb-shell."""
+        async with self._lock:
+            await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._push_bytes_sync(data, remote_path)
+            )
+
     def _push_sync(self, local_path: str, remote_path: str) -> None:
         if not self._device:
             raise AdbError("Not connected")
         _, dev = self._device
         try:
-            # adb-shell / ppadb: filesystem path (or BytesIO). Open file handles
-            # break adb-shell (os.stat → TypeError: not BufferedReader).
+            # Must be a filesystem path str or BytesIO — not a BufferedReader.
             dev.push(local_path, remote_path)
+        except Exception as exc:  # noqa: BLE001
+            raise AdbError(str(exc)) from exc
+
+    def _push_bytes_sync(self, data: bytes, remote_path: str) -> None:
+        if not self._device:
+            raise AdbError("Not connected")
+        kind, dev = self._device
+        try:
+            if kind == "server":
+                # ppadb expects a local path; stage a temp file
+                import tempfile
+                from pathlib import Path
+
+                with tempfile.NamedTemporaryFile("wb", delete=False) as tmp:
+                    tmp.write(data)
+                    local = tmp.name
+                try:
+                    dev.push(local, remote_path)
+                finally:
+                    Path(local).unlink(missing_ok=True)
+            else:
+                # adb-shell accepts BytesIO without os.stat on a file handle
+                dev.push(BytesIO(data), remote_path)
         except Exception as exc:  # noqa: BLE001
             raise AdbError(str(exc)) from exc
 

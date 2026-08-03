@@ -7,12 +7,10 @@ import base64
 import json
 import logging
 import shlex
-import tempfile
 import time
-from pathlib import Path
 from typing import Any
 
-from .adb import AdbError, FireStickAdb
+from .adb import FireStickAdb
 from .const import AGENT_ACTION, AGENT_COMPONENT, RPC_OUT, RPC_STATUS
 from .pronto import build_instant_fire
 
@@ -55,6 +53,11 @@ class StickAgent:
         return await self._rpc("tv_state")
 
     async def blast_json(self, address: str, payload: dict[str, Any]) -> dict[str, Any]:
+        # Inline JSON via Intent extra — avoids adb push / Stick base64 entirely.
+        # (adb-shell push of an open file raises TypeError: BufferedReader.)
+        raw = json.dumps(payload, separators=(",", ":"))
+        if len(raw) < 700_000:
+            return await self._rpc("blast", address=address, json=raw)
         remote = "/data/local/tmp/ftvir_blast.json"
         await self._write_remote_json(remote, payload)
         return await self._rpc("blast", address=address, json_file=remote)
@@ -122,14 +125,8 @@ class StickAgent:
         out = await self.adb.shell(script)
         if "WRITE_OK" in out:
             return
-        # Last resort: adb push (path string — not an open file handle)
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
-            tmp.write(json.dumps(payload, separators=(",", ":")))
-            local = tmp.name
-        try:
-            await self.adb.push(local, remote_path)
-        finally:
-            Path(local).unlink(missing_ok=True)
+        # Last resort: in-memory push (never an open BufferedReader)
+        await self.adb.push_bytes(raw, remote_path)
 
     async def _cat_rpc(self, path: str) -> str:
         """Read RPC file; Magisk su required (app_data_file SELinux)."""

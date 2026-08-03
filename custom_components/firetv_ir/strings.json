@@ -46,8 +46,9 @@
       },
       "power": {
         "title": "Power & state",
-        "description": "IR is never used for state. Prefer discrete POWER_ON/OFF when the profile has them; otherwise gate POWER_TOGGLE with a detector.",
+        "description": "IR is never used for state. Prefer discrete POWER_ON/OFF when the profile has them; otherwise gate POWER_TOGGLE with a detector. Amazon names like “Model Group 2” are shown as Brand TV unless you set a custom name.",
         "data": {
+          "device_name": "Device name",
           "power_mode": "Power mode",
           "state_source": "TV state source",
           "tv_ip": "TV IP (ping)",
@@ -72,6 +73,7 @@
       "init": {
         "title": "Fire TV IR options",
         "data": {
+          "device_name": "Device name",
           "power_mode": "Power mode",
           "state_source": "TV state source",
           "tv_ip": "TV IP (ping)",

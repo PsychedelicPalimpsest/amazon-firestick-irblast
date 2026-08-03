@@ -21,6 +21,7 @@ from .const import (
     CONF_BRAND_NAME,
     CONF_CODES,
     CONF_CODESET_ID,
+    CONF_DEVICE_NAME,
     CONF_DUTY_CYCLE,
     CONF_HOST,
     CONF_PORT,
@@ -46,6 +47,8 @@ from .const import (
     STATE_PING,
     STATE_STICK_AWAKE,
 )
+
+from .naming import device_title, profile_option_label
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -246,14 +249,13 @@ class FireTvIrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     return await self.async_step_power()
 
+        brand = self._data.get(CONF_BRAND_NAME)
         options = {}
         for p in self._profiles:
             pid = p.get("profile_id") or p.get("codeset_id")
             if pid is None or int(pid) < 0:
                 continue
-            badge = "discrete" if p.get("has_discrete_power") else "toggle"
-            nfn = len(p.get("functions") or [])
-            options[str(pid)] = f"#{pid} {p.get('name')} ({nfn} fn, {badge})"
+            options[str(pid)] = profile_option_label(p, brand)
 
         fields: dict[Any, Any] = {}
         if options:
@@ -318,14 +320,23 @@ class FireTvIrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._data[CONF_TV_IP] = user_input[CONF_TV_IP]
             if user_input.get(CONF_STATE_ENTITY):
                 self._data[CONF_STATE_ENTITY] = user_input[CONF_STATE_ENTITY]
+            custom = (user_input.get(CONF_DEVICE_NAME) or "").strip()
+            if custom:
+                self._data[CONF_DEVICE_NAME] = custom
             return await self._async_create()
 
         has_discrete = "POWER_ON" in (self._data.get(CONF_CODES) or {}) and "POWER_OFF" in (
             self._data.get(CONF_CODES) or {}
         )
         default_mode = POWER_MODE_DISCRETE if has_discrete else POWER_MODE_TOGGLE_STATE
+        suggested = device_title(
+            brand=self._data.get(CONF_BRAND_NAME),
+            profile_name=self._data.get(CONF_PROFILE_NAME),
+            codeset_id=self._data.get(CONF_CODESET_ID),
+        )
         schema = vol.Schema(
             {
+                vol.Optional(CONF_DEVICE_NAME, default=suggested): str,
                 vol.Required(CONF_POWER_MODE, default=default_mode): vol.In(
                     {
                         POWER_MODE_DISCRETE: "Discrete POWER_ON/OFF (fallback toggle)",
@@ -352,7 +363,12 @@ class FireTvIrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _async_create(self) -> FlowResult:
         # Drop ephemeral keys
         data = {k: v for k, v in self._data.items() if not k.startswith("_")}
-        title = f"{data.get(CONF_BRAND_NAME, 'TV')} {data.get(CONF_PROFILE_NAME, '')}".strip()
+        title = device_title(
+            brand=data.get(CONF_BRAND_NAME),
+            profile_name=data.get(CONF_PROFILE_NAME),
+            codeset_id=data.get(CONF_CODESET_ID),
+            friendly_name=data.get(CONF_DEVICE_NAME),
+        )
         if self._adb:
             await self._adb.close()
         return self.async_create_entry(title=title or "Fire TV IR", data=data)
@@ -371,8 +387,14 @@ class FireTvIrOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
         data = {**self.entry.data, **self.entry.options}
+        suggested = data.get(CONF_DEVICE_NAME) or device_title(
+            brand=data.get(CONF_BRAND_NAME),
+            profile_name=data.get(CONF_PROFILE_NAME),
+            codeset_id=data.get(CONF_CODESET_ID),
+        )
         schema = vol.Schema(
             {
+                vol.Optional(CONF_DEVICE_NAME, default=suggested): str,
                 vol.Required(
                     CONF_POWER_MODE, default=data.get(CONF_POWER_MODE, POWER_MODE_TOGGLE_STATE)
                 ): vol.In(

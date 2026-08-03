@@ -14,8 +14,15 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_BRAND_NAME, CONF_PROFILE_NAME, DOMAIN
+from .const import (
+    CONF_BRAND_NAME,
+    CONF_CODESET_ID,
+    CONF_DEVICE_NAME,
+    CONF_PROFILE_NAME,
+    DOMAIN,
+)
 from .coordinator import FireTvIrCoordinator
+from .naming import device_title
 
 
 async def async_setup_entry(
@@ -36,11 +43,18 @@ class FireTvIrMediaPlayer(CoordinatorEntity[FireTvIrCoordinator], MediaPlayerEnt
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_tv"
-        brand = entry.data.get(CONF_BRAND_NAME, "TV")
-        profile = entry.data.get(CONF_PROFILE_NAME, "")
+        data = {**entry.data, **entry.options}
+        brand = data.get(CONF_BRAND_NAME) or "TV"
+        profile = data.get(CONF_PROFILE_NAME) or ""
+        title = device_title(
+            brand=brand,
+            profile_name=profile,
+            codeset_id=data.get(CONF_CODESET_ID),
+            friendly_name=data.get(CONF_DEVICE_NAME),
+        )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name=f"{brand} {profile}".strip(),
+            name=title,
             manufacturer=brand,
             model=profile or "IR TV",
             via_device=(DOMAIN, f"{entry.entry_id}_stick"),

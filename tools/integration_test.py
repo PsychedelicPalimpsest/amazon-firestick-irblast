@@ -20,6 +20,7 @@ from firetv_ir.const import (  # noqa: E402
     POWER_MODE_TOGGLE_ONLY,
     POWER_MODE_TOGGLE_STATE,
 )
+from firetv_ir.naming import device_title, is_generic_profile_name  # noqa: E402
 from firetv_ir.power import resolve_turn_off, resolve_turn_on  # noqa: E402
 from firetv_ir.pronto import build_instant_fire, pronto_to_raw  # noqa: E402
 from firetv_ir.state import (  # noqa: E402
@@ -97,6 +98,28 @@ def test_power_semantics() -> None:
             ok(name, f"→ {got}")
         else:
             bad(name, f"expected {expect}, got {got}")
+
+
+def test_naming() -> None:
+    print("\n== naming ==")
+    if not is_generic_profile_name("Model Group 2"):
+        bad("generic Model Group 2", "expected True")
+    else:
+        ok("generic Model Group 2")
+    got = device_title(brand="Vizio", profile_name="Model Group 2", codeset_id=4696)
+    if got != "Vizio TV":
+        bad("Vizio Model Group 2 → title", got)
+    else:
+        ok("Vizio Model Group 2 → Vizio TV")
+    got = device_title(
+        brand="Vizio",
+        profile_name="Model Group 2",
+        friendly_name="Living Room TV",
+    )
+    if got != "Living Room TV":
+        bad("custom device name", got)
+    else:
+        ok("custom device name")
 
 
 def test_assumed_state() -> None:
@@ -285,6 +308,7 @@ def main() -> int:
     print("firetv_ir integration test")
     test_pronto()
     test_power_semantics()
+    test_naming()
     test_assumed_state()
 
     if not args.skip_live:
