@@ -108,6 +108,104 @@ Toggle-only brands (e.g. many Vizio profiles) should use **toggle_with_state** p
 
 Sending IR never marks the TV on unless `assumed` is the chosen source.
 
+## Running with HA-Firemote and androidtv
+
+[HA-Firemote](https://github.com/PRProd/HA-Firemote) is a **Lovelace card**, not an integration. It does not open its own ADB session. For Fire Stick it drives the stock **[androidtv](https://www.home-assistant.io/integrations/androidtv/)** `media_player` (and optionally **androidtv_remote**) — navigation, apps, play/pause, home, etc. via ADB keyevents on the **Stick**.
+
+**firetv_ir** is a separate integration: IR blasts from the Voice Remote to the **external TV** (power, volume, mute, HDMI inputs).
+
+| Control | Use entity | Integration |
+|--------|------------|-------------|
+| D-pad, home, back, apps, Stick sleep | `media_player.fire_tv_*` | androidtv (Firemote `entity`) |
+| TV power / volume / mute / HDMI | `media_player.*_tv`, `remote.*_tv_remote` | firetv_ir |
+
+Firemote’s default power/volume/mute buttons call `androidtv.adb_command` (`POWER`, `VOLUME_UP`, …) or `media_player.turn_on` on the **Stick** entity. That does **not** send IR to the TV (Firemote’s FAQ says the same — use overrides or CEC). CEC is unsafe on many Fire OS builds; use **button overrides** to firetv_ir instead.
+
+### Shared ADB (one Stick client)
+
+The Stick tolerates **one** TCP ADB attachment. Do **not** run two direct `adb-shell` clients (androidtv + firetv_ir both without a server).
+
+1. Run a single **ADB server** on the HA host (ADB add-on, Docker `adb`, or `adb -a nodaemon server start`).
+2. In **androidtv** config: set **ADB server IP** = HA host (`127.0.0.1`), port `5037`.
+3. In **firetv_ir** config: same **ADB server IP/port** (not a second direct connection).
+4. Use the **same authorized key** (approve once on the Stick for the HA host).
+
+Both integrations talk to `adbd` on the server; the server keeps the one Stick session. Avoid desktop `adb` or `./ftvir` to the Stick while HA is active unless they also use that server (`adb -H 127.0.0.1 …`).
+
+### Firemote → TV via button overrides
+
+Point TV buttons at firetv_ir entities (YAML on the card):
+
+```yaml
+type: custom:firemote-card
+entity: media_player.fire_tv_192_168_1_112   # androidtv — Stick
+device_family: amazon-fire
+device_type: fire_stick_4k
+button_overrides:
+  power-button:
+    action: remote.toggle
+    target:
+      entity_id: remote.bedroom_tv_tv_remote      # firetv_ir
+  volume-up-button:
+    action: media_player.volume_up
+    target:
+      entity_id: media_player.bedroom_tv_tv
+  volume-down-button:
+    action: media_player.volume_down
+    target:
+      entity_id: media_player.bedroom_tv_tv
+  mute-button:
+    action: media_player.volume_mute
+    target:
+      entity_id: media_player.bedroom_tv_tv
+```
+
+HDMI launcher buttons on Firemote normally hit androidtv. For **TV** HDMI via IR, use a **custom launcher** or override:
+
+```yaml
+custom_launchers:
+  - friendly_name: TV HDMI 4
+    label: HDMI4
+    icon: mdi:hdmi-port
+    action: remote.turn_on
+    target:
+      entity_id: remote.bedroom_tv_tv_remote
+    data:
+      activity: HDMI_4
+app_launch_1: customlauncher TV HDMI 4
+```
+
+Keep Firemote’s `entity` on androidtv for everything that controls the Stick; use firetv_ir only for TV-side IR.
+
+### Firemote: empty ADB dropdown + “Device is already configured”
+
+These two symptoms usually mean the same thing: **androidtv is already set up**, but **no `media_player` entity with platform `androidtv` is available** for the card picker.
+
+| Symptom | Meaning |
+|--------|---------|
+| Firemote **Android Debug Bridge Entity** dropdown is empty (`- - - -`) | No `media_player.*` in the entity registry with `platform: androidtv` |
+| Add integration → **Device is already configured** | A config entry for that Stick (MAC/IP) already exists — do not add a second one |
+
+**Do not** add another Android Debug Bridge entry. Fix the existing one:
+
+1. **Settings → Devices & services → Android Debug Bridge** — open the **existing** entry (not Add integration).
+2. **Developer Tools → States** — search `media_player.` and look for an entity whose platform is `androidtv` (not `firetv_ir`). `firetv_ir` entities control the **TV** via IR; Firemote ignores them.
+3. If no androidtv `media_player` exists, or it is `unavailable`:
+   - **Reload** the Android Debug Bridge entry.
+   - Check **Settings → System → Logs** for androidtv setup errors (ADB key, timeout, connection refused).
+   - Confirm **ADB server IP** matches firetv_ir (`127.0.0.1:5037` on the HA host).
+   - On the Stick: approve the HA host ADB key if prompted.
+4. If the entry is broken and reload does not help: **delete** the Android Debug Bridge config entry, then add it once with the shared ADB server settings above.
+5. **Firemote workaround** — if the entity exists in States but the dropdown is still empty, use card YAML and set `entity` manually:
+
+```yaml
+type: custom:firemote-card
+entity: media_player.fire_tv_192_168_1_112   # your androidtv media_player entity_id
+device_family: amazon-fire
+```
+
+Refresh the browser after androidtv recovers.
+
 ## Automations — press any IR button
 
 ### Remote entity (recommended)
@@ -162,6 +260,15 @@ data:
 
 - `firetv_ir.send_function` — `function: HDMI_4` + target `entity_id` (or `entry_id`)
 - `firetv_ir.refresh_profile` — re-fetch codeset from IDC via Stick
+- `firetv_ir.adb_shell` — run a raw shell command on the Stick (returns `output`)
+
+```yaml
+action: firetv_ir.adb_shell
+data:
+  command: getprop ro.build.version.incremental
+  entity_id: media_player.YOUR_TV_tv
+response_variable: stick_info
+```
 
 ## Layout
 

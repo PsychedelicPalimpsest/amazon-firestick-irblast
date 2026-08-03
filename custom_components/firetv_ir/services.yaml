@@ -40,3 +40,40 @@ refresh_profile:
       required: false
       selector:
         text:
+
+adb_shell:
+  name: ADB shell
+  description: >
+    Run a raw shell command on the Fire Stick over the integration's ADB session.
+    Do not include the "adb shell" prefix — only the command (e.g. getprop ro.build.version).
+  fields:
+    command:
+      name: Shell command
+      description: Command to run on the Stick (without the adb shell prefix).
+      required: true
+      example: getprop ro.build.version.incremental
+      selector:
+        text:
+          multiline: true
+    timeout:
+      name: Timeout
+      description: Seconds to wait for the command (direct ADB only; server mode may ignore).
+      required: false
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 300
+          unit_of_measurement: s
+    entity_id:
+      name: Target entity
+      description: Any firetv_ir entity. Required when multiple Stick entries are configured.
+      required: false
+      selector:
+        entity:
+          integration: firetv_ir
+    entry_id:
+      name: Config entry id
+      required: false
+      selector:
+        text:

@@ -7,7 +7,7 @@ import logging
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import (
     config_validation as cv,
@@ -129,6 +129,20 @@ def _register_services(hass: HomeAssistant) -> None:
         for coord in _coordinators_for_call(call):
             await coord.async_refresh_profile()
 
+    async def handle_adb_shell(call: ServiceCall) -> dict[str, str]:
+        coordinators = _coordinators_for_call(call)
+        if len(coordinators) > 1:
+            raise HomeAssistantError(
+                "Multiple Fire TV IR entries loaded — set entity_id or entry_id"
+            )
+        command = call.data["command"]
+        timeout = float(call.data.get("timeout", 30.0))
+        try:
+            output = await coordinators[0].adb.shell(command, timeout=timeout)
+        except AdbError as exc:
+            raise HomeAssistantError(str(exc)) from exc
+        return {"output": output}
+
     hass.services.async_register(
         DOMAIN,
         "send_function",
@@ -152,6 +166,22 @@ def _register_services(hass: HomeAssistant) -> None:
             }
         ),
     )
+    hass.services.async_register(
+        DOMAIN,
+        "adb_shell",
+        handle_adb_shell,
+        schema=vol.Schema(
+            {
+                vol.Required("command"): cv.string,
+                vol.Optional("timeout", default=30.0): vol.All(
+                    cv.positive_float, vol.Range(max=300)
+                ),
+                vol.Optional("entity_id"): cv.entity_ids,
+                vol.Optional("entry_id"): cv.string,
+            }
+        ),
+        supports_response=SupportsResponse.ONLY,
+    )
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -166,4 +196,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not hass.data[DOMAIN]:
             hass.services.async_remove(DOMAIN, "send_function")
             hass.services.async_remove(DOMAIN, "refresh_profile")
+            hass.services.async_remove(DOMAIN, "adb_shell")
     return unload_ok
