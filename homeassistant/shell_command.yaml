@@ -1,0 +1,7 @@
+# Copy this repo to the HA host (e.g. /config/ftvir), then in configuration.yaml:
+#   shell_command: !include ftvir/homeassistant/shell_command.yaml
+#
+# Host must have adb; Stick reachable (USB or adb connect IP:5555).
+
+ftvir_power: "cd /config/ftvir && ./ftvir power"
+ftvir_status: "cd /config/ftvir && ./ftvir status"

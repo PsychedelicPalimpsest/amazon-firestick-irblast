@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# Fire Stick → remote IR blaster (no HDMI-CEC).
+#
+#   ./ftvir power          # blast codes/power.json (HA-friendly, quiet)
+#   ./ftvir status         # 0 if adb device ready
+#   ./ftvir setup          # Magisk priv-app module (one-time, then reboot)
+#   ./ftvir blast --json FILE [--mac MAC]
+#
+# Exit 0 on success. Designed for Home Assistant shell_command.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+if [[ -f "$ROOT/config.env" ]]; then
+  # shellcheck disable=SC1091
+  set -a; source "$ROOT/config.env"; set +a
+fi
+
+ADB="${ADB:-adb}"
+SERIAL="${ANDROID_SERIAL:-}"
+MAC="${FTVIR_MAC:-14:91:38:B5:D6:69}"
+CODE_FILE="${FTVIR_CODE:-codes/power.json}"
+VERBOSE="${FTVIR_VERBOSE:-0}"
+
+log() { [[ "$VERBOSE" == "1" ]] && echo "$*" >&2 || true; }
+die() { echo "$*" >&2; exit 1; }
+
+adb() {
+  if [[ -n "$SERIAL" ]]; then
+    command "$ADB" -s "$SERIAL" "$@"
+  else
+    command "$ADB" "$@"
+  fi
+}
+
+need_device() {
+  adb get-state >/dev/null 2>&1 || die "no adb device (set ANDROID_SERIAL in config.env)"
+}
+
+have_root() {
+  adb shell 'su -c id' 2>/dev/null | grep -q 'uid=0'
+}
+
+ftvir_ok() {
+  adb shell pm path com.mitch.ftvir 2>/dev/null | grep -q . || return 1
+  adb shell dumpsys package com.mitch.ftvir 2>/dev/null \
+    | grep -A30 'grantedPermissions:' | grep -q 'AMAZON_REMOTE_DFU'
+}
+
+resolve_code() {
+  local f="$1"
+  [[ "$f" = /* ]] || f="$ROOT/$f"
+  [[ -f "$f" ]] || die "missing code file: $f"
+  cat "$f"
+}
+
+# IR via Magisk priv-app (preferred — no su prompt).
+blast_ftvir() {
+  local mac="$1" json="$2"
+  local remote="/data/local/tmp/ftvir_blast.json"
+  local tmp
+  tmp="$(mktemp)"
+  printf '%s' "$json" >"$tmp"
+  adb push "$tmp" "$remote" >/dev/null
+  rm -f "$tmp"
+  adb shell am startservice \
+    -n com.mitch.ftvir/.BlastService \
+    -a com.mitch.ftvir.BLAST \
+    --es address "$mac" \
+    --es json_file "$remote" >/dev/null
+  log "blasted via FtvIr → $mac"
+}
+
+# IR via KeyMapService as root (fallback).
+blast_keymap() {
+  local mac="$1" json="$2"
+  local remote_json="/data/local/tmp/ftvir_blast.json"
+  local remote_sh="/data/local/tmp/ftvir_keymap.sh"
+  local tmp
+  tmp="$(mktemp)"
+  printf '%s' "$json" >"$tmp"
+  adb push "$tmp" "$remote_json" >/dev/null
+  cat >"$tmp" <<EOF
+#!/system/bin/sh
+JSON=\$(cat $remote_json)
+am startservice \\
+  -n com.amazon.device.bluetoothkeymaplib/.service.KeyMapService \\
+  -a com.amazon.device.bluetoothkeymap.action.KEYMAP_SYNC \\
+  --es address '$mac' \\
+  --es action instant_blast \\
+  --es json "\$JSON"
+EOF
+  adb push "$tmp" "$remote_sh" >/dev/null
+  rm -f "$tmp"
+  adb shell chmod 755 "$remote_sh"
+  # Prefer plain su; mount-master only if needed
+  if ! timeout 20 adb shell "su -c 'sh $remote_sh'" >/dev/null 2>&1; then
+    timeout 20 adb shell "su -mm -c 'sh $remote_sh'" >/dev/null 2>&1 \
+      || die "keymap blast failed (Magisk su denied?)"
+  fi
+  log "blasted via root KEYMAP → $mac"
+}
+
+do_blast() {
+  local mac="$1" json="$2"
+  need_device
+  if ftvir_ok; then
+    blast_ftvir "$mac" "$json"
+  elif have_root; then
+    blast_keymap "$mac" "$json"
+  else
+    die "need privileged FtvIr (./ftvir setup && reboot) or Magisk su for shell"
+  fi
+}
+
+cmd_status() {
+  need_device
+  local path
+  path="$(adb shell pm path com.amazon.device.bluetoothkeymaplib 2>/dev/null | tr -d '\r' || true)"
+  [[ -n "$path" ]] || die "bluetoothkeymaplib missing"
+  if ftvir_ok; then
+    log "ready: FtvIr privileged"
+  elif have_root; then
+    log "ready: Magisk su fallback"
+  else
+    die "device up but no blast path (run ./ftvir setup && reboot)"
+  fi
+  echo "ok mac=$MAC"
+}
+
+cmd_power() {
+  local json
+  json="$(resolve_code "$CODE_FILE")"
+  do_blast "$MAC" "$json"
+  echo "ok"
+}
+
+cmd_blast() {
+  local mac="$MAC" json_file=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --mac) mac="$2"; shift 2 ;;
+      --json) json_file="$2"; shift 2 ;;
+      -v|--verbose) VERBOSE=1; shift ;;
+      *) die "unknown: $1" ;;
+    esac
+  done
+  [[ -n "$json_file" ]] || die "usage: ftvir blast --json FILE [--mac MAC]"
+  do_blast "$mac" "$(resolve_code "$json_file")"
+  echo "ok"
+}
+
+cmd_setup() {
+  exec "$ROOT/setup_permanent.sh"
+}
+
+usage() {
+  cat <<EOF
+ftvir — Fire Stick remote IR (no CEC)
+
+  ftvir status              check adb + blast path
+  ftvir power               blast \$FTVIR_CODE (default codes/power.json)
+  ftvir blast --json FILE   blast arbitrary InstantFire JSON
+  ftvir setup               install Magisk priv-app module (reboot after)
+
+Config: copy config.env.example → config.env
+Home Assistant: see homeassistant/
+EOF
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+  case "$cmd" in
+    -v|--verbose) VERBOSE=1; main "$@" ;;
+    status) cmd_status "$@" ;;
+    power|toggle|on|off) cmd_power "$@" ;;
+    blast) cmd_blast "$@" ;;
+    setup) cmd_setup "$@" ;;
+    -h|--help|"") usage ;;
+    *) die "unknown command: $cmd" ;;
+  esac
+}
+
+main "$@"

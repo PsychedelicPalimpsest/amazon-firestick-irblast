@@ -1,0 +1,8 @@
+config.env
+__pycache__/
+*.pyc
+ble_ir/out/
+ble_ir/debug.keystore
+*.apk
+*.idsig
+.DS_Store

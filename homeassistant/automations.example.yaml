@@ -1,0 +1,15 @@
+# Example automations — adjust entity_ids / triggers.
+# Requires shell_command.ftvir_power from shell_command.yaml
+
+- id: tv_power_toggle_ftvir
+  alias: "TV power (Fire remote IR)"
+  mode: single
+  trigger: []
+  action:
+    - action: shell_command.ftvir_power
+
+# Optional: expose as a button helper script
+# script:
+#   tv_power_ir:
+#     sequence:
+#       - action: shell_command.ftvir_power

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.mitch.ftvir"
+    android:versionCode="1"
+    android:versionName="1.0">
+    <uses-sdk android:minSdkVersion="22" android:targetSdkVersion="22" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
+    <uses-permission android:name="android.permission.AMAZON_REMOTE_DFU" />
+    <application android:label="@string/app_name" android:allowBackup="false">
+        <service
+            android:name=".BlastService"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.mitch.ftvir.BLAST" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
