@@ -108,24 +108,28 @@ class StickAgent:
     async def _write_remote_json(self, remote_path: str, payload: dict[str, Any]) -> None:
         raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         b64 = base64.b64encode(raw).decode("ascii")
-        # Fire OS may lack base64; use toybox / python / busybox fallbacks
+        remote = shlex.quote(remote_path)
+        # Fire OS: try toybox/base64 decode; verify with a marker + size.
         script = (
-            f"B64={shlex.quote(b64)}; "
-            f"if command -v base64 >/dev/null 2>&1; then echo \"$B64\" | base64 -d > {shlex.quote(remote_path)}; "
-            f"elif command -v toybox >/dev/null 2>&1; then echo \"$B64\" | toybox base64 -d > {shlex.quote(remote_path)}; "
-            f"else echo \"$B64\" > {shlex.quote(remote_path)}.b64; "
-            f"echo FAIL_NO_BASE64; fi"
+            f"B64={shlex.quote(b64)}; DEST={remote}; "
+            f"ok=0; "
+            f"if echo \"$B64\" | toybox base64 -d > \"$DEST\" 2>/dev/null; then ok=1; "
+            f"elif echo \"$B64\" | base64 -d > \"$DEST\" 2>/dev/null; then ok=1; "
+            f"elif echo \"$B64\" | busybox base64 -d > \"$DEST\" 2>/dev/null; then ok=1; "
+            f"fi; "
+            f"if [ \"$ok\" = 1 ] && [ -s \"$DEST\" ]; then echo WRITE_OK; else echo FAIL_NO_BASE64; fi"
         )
         out = await self.adb.shell(script)
-        if "FAIL_NO_BASE64" in out:
-            # Last resort: push via adb-shell
-            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
-                tmp.write(json.dumps(payload, separators=(",", ":")))
-                local = tmp.name
-            try:
-                await self.adb.push(local, remote_path)
-            finally:
-                Path(local).unlink(missing_ok=True)
+        if "WRITE_OK" in out:
+            return
+        # Last resort: adb push (path string — not an open file handle)
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
+            tmp.write(json.dumps(payload, separators=(",", ":")))
+            local = tmp.name
+        try:
+            await self.adb.push(local, remote_path)
+        finally:
+            Path(local).unlink(missing_ok=True)
 
     async def _cat_rpc(self, path: str) -> str:
         """Read RPC file; Magisk su required (app_data_file SELinux)."""

@@ -104,13 +104,11 @@ class FireStickAdb:
     def _push_sync(self, local_path: str, remote_path: str) -> None:
         if not self._device:
             raise AdbError("Not connected")
-        kind, dev = self._device
+        _, dev = self._device
         try:
-            if kind == "server":
-                dev.push(local_path, remote_path)
-            else:
-                with open(local_path, "rb") as f:
-                    dev.push(f, remote_path)
+            # adb-shell / ppadb: filesystem path (or BytesIO). Open file handles
+            # break adb-shell (os.stat → TypeError: not BufferedReader).
+            dev.push(local_path, remote_path)
         except Exception as exc:  # noqa: BLE001
             raise AdbError(str(exc)) from exc
 
