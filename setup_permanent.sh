@@ -28,10 +28,10 @@ touch "$MOD/auto_mount"
 cat > "$MOD/module.prop" <<PROP
 id=ftvir
 name=FtvIr BLE IR Blaster
-version=v1
-versionCode=1
+version=v1.6
+versionCode=7
 author=local
-description=Privileged InstantFire IR (no CEC)
+description=Privileged InstantFire IR + DeviceControl catalog agent (no CEC)
 PROP
 # Forever-allow adb shell su (KEYMAP fallback)
 cat > "$MOD/service.sh" <<'SVC'

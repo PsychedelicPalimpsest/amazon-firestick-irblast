@@ -1,6 +1,7 @@
 config.env
 __pycache__/
 *.pyc
+.venv/
 ble_ir/out/
 ble_ir/debug.keystore
 *.apk

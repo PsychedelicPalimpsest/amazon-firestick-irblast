@@ -1,0 +1,27 @@
+send_function:
+  name: Send IR function
+  description: Blast a named function from the cached Amazon codeset (e.g. HDMI_4, VOLUME_UP).
+  fields:
+    function:
+      required: true
+      example: POWER_TOGGLE
+      selector:
+        text:
+    entity_id:
+      required: false
+      selector:
+        entity:
+          integration: firetv_ir
+    entry_id:
+      required: false
+      selector:
+        text:
+
+refresh_profile:
+  name: Refresh profile
+  description: Re-download the selected TV codeset from Amazon IDC via the Stick.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        text:

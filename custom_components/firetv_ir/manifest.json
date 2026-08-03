@@ -1,0 +1,11 @@
+{
+  "domain": "firetv_ir",
+  "name": "Fire TV IR",
+  "codeowners": ["@local"],
+  "config_flow": true,
+  "documentation": "https://github.com/local/firetv_ir",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/local/firetv_ir/issues",
+  "requirements": ["adb-shell[async]>=0.4.4", "pure-python-adb>=0.3.0.dev0"],
+  "version": "0.1.0"
+}

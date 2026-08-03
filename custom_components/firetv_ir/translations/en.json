@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Fire Stick ADB",
+        "description": "Connect to the Fire Stick (same options as the Android TV integration). Magisk FtvIr must already be installed (`./ftvir setup`).",
+        "data": {
+          "host": "Host",
+          "port": "ADB port",
+          "adbkey": "Path to adbkey (optional; auto-generated if empty)",
+          "adb_server_ip": "ADB server IP (optional)",
+          "adb_server_port": "ADB server port",
+          "region": "Amazon IDC region"
+        }
+      },
+      "remote": {
+        "title": "Amazon remote",
+        "description": "Pick the bonded Voice Remote that has an IR LED.",
+        "data": {
+          "remote_mac": "Remote MAC"
+        }
+      },
+      "brand": {
+        "title": "TV brand",
+        "description": "{hint}. Search by name or enter a brand id from Equipment Control.",
+        "data": {
+          "brand_search": "Brand search",
+          "brand_id": "Brand id (advanced)"
+        }
+      },
+      "brand_pick": {
+        "title": "Select brand",
+        "data": {
+          "brand_id": "Brand"
+        }
+      },
+      "profile": {
+        "title": "TV profile",
+        "description": "Enable Test blast to fire POWER_ON/TOGGLE once, then enable Confirm to save the codeset.",
+        "data": {
+          "profile_id": "Profile",
+          "known_codeset_id": "Known codeset id (advanced)",
+          "test_blast": "Test blast power",
+          "confirm": "Confirm and continue"
+        }
+      },
+      "power": {
+        "title": "Power & state",
+        "description": "IR is never used for state. Prefer discrete POWER_ON/OFF when the profile has them; otherwise gate POWER_TOGGLE with a detector.",
+        "data": {
+          "power_mode": "Power mode",
+          "state_source": "TV state source",
+          "tv_ip": "TV IP (ping)",
+          "state_entity": "HA entity (on/off truth)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect over ADB",
+      "helper_missing": "Magisk FtvIr helper missing or not privileged — run ./ftvir setup",
+      "remotes_failed": "Could not list bonded remotes",
+      "idc_failed": "Amazon IDC catalog call failed (Stick must be signed in)",
+      "no_brand": "No matching TV brand",
+      "test_failed": "Test IR blast failed"
+    },
+    "abort": {
+      "already_configured": "This Fire Stick is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Fire TV IR options",
+        "data": {
+          "power_mode": "Power mode",
+          "state_source": "TV state source",
+          "tv_ip": "TV IP (ping)",
+          "state_entity": "HA entity"
+        }
+      }
+    }
+  }
+}

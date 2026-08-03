@@ -157,15 +157,15 @@ cmd_setup() {
 
 usage() {
   cat <<EOF
-ftvir — Fire Stick remote IR (no CEC)
+ftvir — Fire Stick remote IR (no CEC) — debug/install CLI
 
   ftvir status              check adb + blast path
-  ftvir power               blast \$FTVIR_CODE (default codes/power.json)
+  ftvir power               blast \$FTVIR_CODE (CLI fixture; HA uses config entry)
   ftvir blast --json FILE   blast arbitrary InstantFire JSON
   ftvir setup               install Magisk priv-app module (reboot after)
 
+Day-to-day Home Assistant: copy custom_components/firetv_ir and use Config Flow.
 Config: copy config.env.example → config.env
-Home Assistant: see homeassistant/
 EOF
 }
 

@@ -1,0 +1,7 @@
+{
+  "name": "Fire TV IR",
+  "render_readme": true,
+  "homeassistant": "2024.1.0",
+  "domains": ["media_player", "remote"],
+  "iot_class": "Local Polling"
+}
