@@ -180,7 +180,7 @@ def _register_services(hass: HomeAssistant) -> None:
                 vol.Optional("entry_id"): cv.string,
             }
         ),
-        supports_response=SupportsResponse.ONLY,
+        supports_response=SupportsResponse.OPTIONAL,
     )
 
 
