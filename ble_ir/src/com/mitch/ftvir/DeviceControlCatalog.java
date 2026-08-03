@@ -30,10 +30,30 @@ final class DeviceControlCatalog {
     private static final String DESCRIPTOR = "com.amazon.tv.devicecontrol.api.v1.IDeviceControlApi";
     private static final int TX_BRANDS = 25;
     private static final int TX_PROFILES = 27;
+    private static final int TX_REGISTERED_SCREEN_PROVIDERS = 32;
+    private static final int TX_SCREEN_STATE = 33;
     private static final int TX_PROFILES_BY_IDS = 56;
     private static final long TV_TYPE = 1L;
+    /** Prefer HPD/HDMI link over Stick-internal display for external TV power. */
+    private static final String[] PREFERRED_TV_PROVIDERS =
+            new String[] {"HPD", "HDMI", "HDMI_ADVANCED", "HDMI_INT_SCREEN", "INTEGRAL_HDMI_SCREEN"};
 
     private DeviceControlCatalog() {}
+
+    /**
+     * Read-only TV/screen power from DeviceControl providers (HPD / HDMI / fused).
+     * Does not send IR or CEC. Never invents state from our own blasts.
+     */
+    static JSONObject tvPower(Context context) throws Exception {
+        return withBinder(
+                context,
+                new BinderFn() {
+                    @Override
+                    public JSONObject run(IBinder binder) throws Exception {
+                        return readTvPowerDetailed(context, binder);
+                    }
+                });
+    }
 
     static JSONObject brands(Context context) throws Exception {
         return withBinder(
@@ -116,6 +136,128 @@ final class DeviceControlCatalog {
                 context.getApplicationContext().unbindService(conn);
             } catch (Exception ignored) {
             }
+        }
+    }
+
+    private static JSONObject readTvPowerDetailed(Context context, IBinder binder)
+            throws Exception {
+        JSONObject result = new JSONObject();
+        result.put("source", "devicecontrol_screen");
+
+        String[] registered = readRegisteredScreenProviders(binder);
+        JSONArray regArr = new JSONArray();
+        if (registered != null) {
+            for (String p : registered) {
+                regArr.put(p);
+            }
+        }
+        result.put("providers", regArr);
+
+        JSONObject byProvider = new JSONObject();
+        // Probe preferred TV-link providers one-by-one (single-provider → weight 1.0)
+        for (String name : PREFERRED_TV_PROVIDERS) {
+            if (registered != null && registered.length > 0 && !contains(registered, name)) {
+                continue;
+            }
+            String state = readScreenStateName(context, binder, new String[] {name});
+            if (state != null) {
+                byProvider.put(name, state);
+            }
+        }
+        // Also sample INTERNAL_SCREEN so we can contrast Stick vs TV
+        if (registered == null || contains(registered, "INTERNAL_SCREEN")) {
+            String internal = readScreenStateName(context, binder, new String[] {"INTERNAL_SCREEN"});
+            if (internal != null) {
+                byProvider.put("INTERNAL_SCREEN", internal);
+            }
+        }
+        // Fused aggregate (all providers)
+        String fused = readScreenStateName(context, binder, new String[0]);
+        result.put("raw", fused);
+        result.put("by_provider", byProvider);
+
+        // Prefer a decisive HPD/HDMI reading over UNKNOWN fused aggregate
+        String chosen = null;
+        String chosenProvider = null;
+        for (String name : PREFERRED_TV_PROVIDERS) {
+            if (!byProvider.has(name)) {
+                continue;
+            }
+            String s = byProvider.optString(name, null);
+            if ("ON".equals(s) || "OFF".equals(s)) {
+                chosen = s;
+                chosenProvider = name;
+                break;
+            }
+        }
+        if (chosen == null && ("ON".equals(fused) || "OFF".equals(fused))) {
+            chosen = fused;
+            chosenProvider = "ALL";
+        }
+        result.put("chosen_provider", chosenProvider == null ? JSONObject.NULL : chosenProvider);
+        if ("ON".equals(chosen)) {
+            result.put("is_on", true);
+        } else if ("OFF".equals(chosen)) {
+            result.put("is_on", false);
+        } else {
+            result.put("is_on", JSONObject.NULL);
+        }
+        Log.i(TAG, "tvPower fused=" + fused + " chosen=" + chosen + "@" + chosenProvider
+                + " detail=" + byProvider);
+        return result;
+    }
+
+    private static boolean contains(String[] arr, String needle) {
+        for (String s : arr) {
+            if (needle.equals(s)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String[] readRegisteredScreenProviders(IBinder binder) throws Exception {
+        Parcel in = Parcel.obtain();
+        Parcel out = Parcel.obtain();
+        try {
+            in.writeInterfaceToken(DESCRIPTOR);
+            if (!binder.transact(TX_REGISTERED_SCREEN_PROVIDERS, in, out, 0)) {
+                return new String[0];
+            }
+            out.readException();
+            return out.createStringArray();
+        } finally {
+            out.recycle();
+            in.recycle();
+        }
+    }
+
+    private static String readScreenStateName(Context context, IBinder binder, String[] providers)
+            throws Exception {
+        Parcel in = Parcel.obtain();
+        Parcel out = Parcel.obtain();
+        try {
+            in.writeInterfaceToken(DESCRIPTOR);
+            in.writeStringArray(providers);
+            if (!binder.transact(TX_SCREEN_STATE, in, out, 0)) {
+                return null;
+            }
+            out.readException();
+            if (out.readInt() == 0) {
+                return null;
+            }
+            Object raw = readSerializableWithDcLoader(context, out);
+            if (raw == null) {
+                return null;
+            }
+            Method m = findMethod(raw.getClass(), "name");
+            if (m != null) {
+                return String.valueOf(m.invoke(raw));
+            }
+            return String.valueOf(raw);
+        } finally {
+            out.recycle();
+            in.recycle();
         }
     }
 

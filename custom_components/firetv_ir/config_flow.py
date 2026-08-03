@@ -40,9 +40,11 @@ from .const import (
     POWER_MODE_TOGGLE_ONLY,
     POWER_MODE_TOGGLE_STATE,
     STATE_ASSUMED,
+    STATE_DEVICECONTROL,
     STATE_ENTITY,
     STATE_HDMI,
     STATE_PING,
+    STATE_STICK_AWAKE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -331,12 +333,14 @@ class FireTvIrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         POWER_MODE_TOGGLE_ONLY: "Always POWER_TOGGLE",
                     }
                 ),
-                vol.Required(CONF_STATE_SOURCE, default=STATE_HDMI): vol.In(
+                vol.Required(CONF_STATE_SOURCE, default=STATE_DEVICECONTROL): vol.In(
                     {
-                        STATE_HDMI: "HDMI link on Stick (read-only HPD)",
+                        STATE_DEVICECONTROL: "DeviceControl TV screen state (recommended)",
                         STATE_PING: "Ping TV IP",
+                        STATE_HDMI: "HDMI HPD on Stick (often unavailable)",
                         STATE_ENTITY: "Another HA entity",
-                        STATE_ASSUMED: "Assumed state (last command)",
+                        STATE_STICK_AWAKE: "Stick awake only (androidtv preview; NOT TV)",
+                        STATE_ASSUMED: "Assumed state (last command — unreliable)",
                     }
                 ),
                 vol.Optional(CONF_TV_IP): str,
@@ -375,8 +379,18 @@ class FireTvIrOptionsFlow(config_entries.OptionsFlow):
                     [POWER_MODE_DISCRETE, POWER_MODE_TOGGLE_STATE, POWER_MODE_TOGGLE_ONLY]
                 ),
                 vol.Required(
-                    CONF_STATE_SOURCE, default=data.get(CONF_STATE_SOURCE, STATE_HDMI)
-                ): vol.In([STATE_HDMI, STATE_PING, STATE_ENTITY, STATE_ASSUMED]),
+                    CONF_STATE_SOURCE,
+                    default=data.get(CONF_STATE_SOURCE, STATE_DEVICECONTROL),
+                ): vol.In(
+                    [
+                        STATE_DEVICECONTROL,
+                        STATE_PING,
+                        STATE_HDMI,
+                        STATE_ENTITY,
+                        STATE_STICK_AWAKE,
+                        STATE_ASSUMED,
+                    ]
+                ),
                 vol.Optional(CONF_TV_IP, default=data.get(CONF_TV_IP, "")): str,
                 vol.Optional(CONF_STATE_ENTITY, default=data.get(CONF_STATE_ENTITY, "")): str,
             }

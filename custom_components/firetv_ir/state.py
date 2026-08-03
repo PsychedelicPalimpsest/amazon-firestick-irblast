@@ -1,4 +1,4 @@
-"""TV power state detectors (non-IR, no CEC sends)."""
+"""TV power state detectors (non-IR). Never invent state from our own IR blasts."""
 
 from __future__ import annotations
 
@@ -7,7 +7,14 @@ import re
 from typing import Any, Protocol
 
 from .adb import FireStickAdb
-from .const import STATE_ASSUMED, STATE_ENTITY, STATE_HDMI, STATE_PING
+from .const import (
+    STATE_ASSUMED,
+    STATE_DEVICECONTROL,
+    STATE_ENTITY,
+    STATE_HDMI,
+    STATE_PING,
+    STATE_STICK_AWAKE,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,7 +25,7 @@ class TvStateDetector(Protocol):
 
 
 class AssumedStateDetector:
-    """Last command wins."""
+    """Explicit last-command tracker only — never used as a silent fallback."""
 
     def __init__(self) -> None:
         self._on: bool | None = None
@@ -39,14 +46,54 @@ class AssumedStateDetector:
         return self._on
 
 
-class HdmiLinkDetector:
-    """Read-only HDMI HPD / sink power from Stick dumpsys (never sends CEC)."""
+class DeviceControlStateDetector:
+    """TV screen/power via DeviceControl AIDL getScreenState (HPD + fused providers)."""
+
+    def __init__(self, agent: Any) -> None:
+        self.agent = agent
+
+    async def async_is_on(self) -> bool | None:
+        data = await self.agent.tv_state()
+        val = data.get("is_on")
+        if val is True:
+            return True
+        if val is False:
+            return False
+        return None
+
+
+class StickAwakeDetector:
+    """Fire Stick awake/screen_on — what the androidtv HA entity/preview tracks.
+
+    This is NOT the external TV power. Exposed so it is not confused with TV state.
+    """
 
     def __init__(self, adb: FireStickAdb) -> None:
         self.adb = adb
 
     async def async_is_on(self) -> bool | None:
-        # Read-only probes only — never send CEC OTP / Image View On / active source.
+        text = await self.adb.shell(
+            "dumpsys power 2>/dev/null | grep -E 'mWakefulness=|Display Power: state='"
+        )
+        if re.search(r"mWakefulness=Asleep|Display Power: state=OFF", text):
+            return False
+        if re.search(r"mWakefulness=Awake|Display Power: state=ON", text):
+            return True
+        win = await self.adb.shell("dumpsys window 2>/dev/null | grep mScreenOnFully")
+        if "mScreenOnFully=true" in win:
+            return True
+        if "mScreenOnFully=false" in win:
+            return False
+        return None
+
+
+class HdmiLinkDetector:
+    """Read-only HDMI HPD / sink props on the Stick (never sends CEC)."""
+
+    def __init__(self, adb: FireStickAdb) -> None:
+        self.adb = adb
+
+    async def async_is_on(self) -> bool | None:
         for path in (
             "/sys/class/amhdmitx/amhdmitx0/hpd_state",
             "/sys/devices/virtual/amhdmitx/amhdmitx0/hpd_state",
@@ -142,10 +189,17 @@ def build_detector(
     *,
     adb: FireStickAdb,
     hass: Any | None = None,
+    agent: Any | None = None,
     tv_ip: str | None = None,
     entity_id: str | None = None,
     assumed: AssumedStateDetector | None = None,
 ) -> TvStateDetector:
+    if kind == STATE_DEVICECONTROL:
+        if agent is None:
+            raise ValueError("agent required for devicecontrol state source")
+        return DeviceControlStateDetector(agent)
+    if kind == STATE_STICK_AWAKE:
+        return StickAwakeDetector(adb)
     if kind == STATE_HDMI:
         return HdmiLinkDetector(adb)
     if kind == STATE_PING:
@@ -156,4 +210,9 @@ def build_detector(
         if not hass or not entity_id:
             raise ValueError("hass + state_entity required")
         return HaEntityDetector(hass, entity_id)
-    return assumed or AssumedStateDetector()
+    if kind == STATE_ASSUMED:
+        return assumed or AssumedStateDetector()
+    # Default: DeviceControl if agent available, else HDMI read-only
+    if agent is not None:
+        return DeviceControlStateDetector(agent)
+    return HdmiLinkDetector(adb)

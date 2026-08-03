@@ -29,10 +29,13 @@ POWER_MODE_DISCRETE = "discrete"
 POWER_MODE_TOGGLE_STATE = "toggle_with_state"
 POWER_MODE_TOGGLE_ONLY = "toggle_only"
 
+STATE_DEVICECONTROL = "devicecontrol"
 STATE_HDMI = "hdmi_link"
 STATE_PING = "ping"
 STATE_ENTITY = "ha_entity"
 STATE_ASSUMED = "assumed"
+# Stick awake/screen_on — same signal androidtv HA preview uses; NOT TV power.
+STATE_STICK_AWAKE = "stick_awake"
 
 # App cache — Fire OS denies app writes to /data/local/tmp; read via Magisk su.
 RPC_OUT = "/data/data/com.mitch.ftvir/cache/ftvir_rpc_out.json"

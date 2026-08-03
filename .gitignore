@@ -1,4 +1,6 @@
 config.env
+codes/profile_cache.json
+codes/assumed_state.json
 __pycache__/
 *.pyc
 .venv/

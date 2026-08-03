@@ -20,6 +20,7 @@ from firetv_ir.const import (  # noqa: E402
     POWER_MODE_TOGGLE_ONLY,
     POWER_MODE_TOGGLE_STATE,
 )
+from firetv_ir.power import resolve_turn_off, resolve_turn_on  # noqa: E402
 from firetv_ir.pronto import build_instant_fire, pronto_to_raw  # noqa: E402
 from firetv_ir.state import (  # noqa: E402
     AssumedStateDetector,
@@ -67,45 +68,29 @@ def test_pronto() -> None:
 
 def test_power_semantics() -> None:
     print("\n== power mode helpers ==")
-    # Mirror coordinator decision table without HA.
     codes_discrete = {"POWER_ON": {}, "POWER_OFF": {}, "POWER_TOGGLE": {}}
     codes_toggle = {"POWER_TOGGLE": {}}
 
-    # Match FireTvIrCoordinator: discrete uses POWER_ON/OFF when present (no state gate).
-    def choose_on(mode: str, codes: dict, is_on: bool | None) -> str | None:
-        if mode == POWER_MODE_TOGGLE_ONLY:
-            return "POWER_TOGGLE"
-        if mode == POWER_MODE_DISCRETE and "POWER_ON" in codes:
-            return "POWER_ON"
-        if is_on is True:
-            return None
-        return "POWER_TOGGLE"
-
-    def choose_off(mode: str, codes: dict, is_on: bool | None) -> str | None:
-        if mode == POWER_MODE_TOGGLE_ONLY:
-            return "POWER_TOGGLE"
-        if mode == POWER_MODE_DISCRETE and "POWER_OFF" in codes:
-            return "POWER_OFF"
-        if is_on is False:
-            return None
-        return "POWER_TOGGLE"
-
     cases = [
         (POWER_MODE_DISCRETE, codes_discrete, False, "on", "POWER_ON"),
-        (POWER_MODE_DISCRETE, codes_discrete, True, "on", "POWER_ON"),
+        (POWER_MODE_DISCRETE, codes_discrete, True, "on", None),
+        (POWER_MODE_DISCRETE, codes_discrete, None, "on", "POWER_ON"),
         (POWER_MODE_DISCRETE, codes_discrete, True, "off", "POWER_OFF"),
+        (POWER_MODE_DISCRETE, codes_discrete, False, "off", None),
         (POWER_MODE_TOGGLE_STATE, codes_toggle, False, "on", "POWER_TOGGLE"),
         (POWER_MODE_TOGGLE_STATE, codes_toggle, True, "on", None),
+        (POWER_MODE_TOGGLE_STATE, codes_toggle, None, "on", None),
         (POWER_MODE_TOGGLE_STATE, codes_toggle, True, "off", "POWER_TOGGLE"),
         (POWER_MODE_TOGGLE_STATE, codes_toggle, False, "off", None),
+        (POWER_MODE_TOGGLE_STATE, codes_toggle, None, "off", None),
         (POWER_MODE_TOGGLE_ONLY, codes_toggle, True, "on", "POWER_TOGGLE"),
         (POWER_MODE_TOGGLE_ONLY, codes_toggle, False, "off", "POWER_TOGGLE"),
     ]
     for mode, codes, is_on, direction, expect in cases:
         got = (
-            choose_on(mode, codes, is_on)
+            resolve_turn_on(mode, codes, is_on)
             if direction == "on"
-            else choose_off(mode, codes, is_on)
+            else resolve_turn_off(mode, codes, is_on)
         )
         name = f"{mode}/{direction}/is_on={is_on}"
         if got == expect:

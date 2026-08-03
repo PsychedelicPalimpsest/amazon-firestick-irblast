@@ -23,11 +23,11 @@ from .const import (
     CONF_STATE_SOURCE,
     CONF_TV_IP,
     DOMAIN,
-    POWER_MODE_DISCRETE,
-    POWER_MODE_TOGGLE_ONLY,
     POWER_MODE_TOGGLE_STATE,
     STATE_ASSUMED,
+    STATE_DEVICECONTROL,
 )
+from .power import resolve_toggle, resolve_turn_off, resolve_turn_on
 from .state import AssumedStateDetector, build_detector
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,6 +71,13 @@ class FireTvIrCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     @property
+    def state_source(self) -> str:
+        return self.entry.options.get(
+            CONF_STATE_SOURCE,
+            self.entry.data.get(CONF_STATE_SOURCE, STATE_DEVICECONTROL),
+        )
+
+    @property
     def duty_cycle(self) -> int:
         return int(self.entry.data.get(CONF_DUTY_CYCLE, 33))
 
@@ -79,13 +86,11 @@ class FireTvIrCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return int(self.entry.data.get(CONF_BLAST_COUNT, 1))
 
     def _rebuild_detector(self) -> None:
-        kind = self.entry.options.get(
-            CONF_STATE_SOURCE, self.entry.data.get(CONF_STATE_SOURCE, STATE_ASSUMED)
-        )
         self.detector = build_detector(
-            kind,
+            self.state_source,
             adb=self.adb,
             hass=self.hass,
+            agent=self.agent,
             tv_ip=self.entry.options.get(CONF_TV_IP, self.entry.data.get(CONF_TV_IP)) or None,
             entity_id=self.entry.options.get(
                 CONF_STATE_ENTITY, self.entry.data.get(CONF_STATE_ENTITY)
@@ -103,6 +108,7 @@ class FireTvIrCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             is_on = await self.detector.async_is_on()
         except Exception as exc:  # noqa: BLE001
             raise UpdateFailed(str(exc)) from exc
+        # Never invent state from our own IR blasts — unknown stays unknown.
         return {"is_on": is_on, "functions": sorted(self.codes.keys())}
 
     async def async_send_function(self, function: str) -> None:
@@ -118,12 +124,14 @@ class FireTvIrCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except (AgentError, AdbError) as exc:
                 raise UpdateFailed(str(exc)) from exc
 
-        if function == "POWER_ON":
-            self.assumed.note_on()
-        elif function == "POWER_OFF":
-            self.assumed.note_off()
-        elif function == "POWER_TOGGLE":
-            self.assumed.note_toggle()
+        # Only track last-command when the user explicitly chose "assumed"
+        if self.state_source == STATE_ASSUMED:
+            if function == "POWER_ON":
+                self.assumed.note_on()
+            elif function == "POWER_OFF":
+                self.assumed.note_off()
+            elif function == "POWER_TOGGLE":
+                self.assumed.note_toggle()
         await self.async_request_refresh()
 
     def _is_on(self) -> bool | None:
@@ -132,39 +140,19 @@ class FireTvIrCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.data.get("is_on")
 
     async def async_turn_on(self) -> None:
-        mode = self.power_mode
-        codes = self.codes
-        if mode == POWER_MODE_TOGGLE_ONLY:
-            await self.async_send_function("POWER_TOGGLE")
-            return
-        if mode == POWER_MODE_DISCRETE and "POWER_ON" in codes:
-            await self.async_send_function("POWER_ON")
-            return
-        is_on = self._is_on()
-        if is_on is True:
-            return
-        await self.async_send_function("POWER_TOGGLE")
+        fn = resolve_turn_on(self.power_mode, self.codes, self._is_on())
+        if fn:
+            await self.async_send_function(fn)
 
     async def async_turn_off(self) -> None:
-        mode = self.power_mode
-        codes = self.codes
-        if mode == POWER_MODE_TOGGLE_ONLY:
-            await self.async_send_function("POWER_TOGGLE")
-            return
-        if mode == POWER_MODE_DISCRETE and "POWER_OFF" in codes:
-            await self.async_send_function("POWER_OFF")
-            return
-        is_on = self._is_on()
-        if is_on is False:
-            return
-        await self.async_send_function("POWER_TOGGLE")
+        fn = resolve_turn_off(self.power_mode, self.codes, self._is_on())
+        if fn:
+            await self.async_send_function(fn)
 
     async def async_toggle(self) -> None:
-        is_on = self._is_on()
-        if is_on is True:
-            await self.async_turn_off()
-        else:
-            await self.async_turn_on()
+        fn = resolve_toggle(self.power_mode, self.codes, self._is_on())
+        if fn:
+            await self.async_send_function(fn)
 
     async def async_volume_up(self) -> None:
         await self.async_send_function("VOLUME_UP")
@@ -173,12 +161,11 @@ class FireTvIrCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_send_function("VOLUME_DOWN")
 
     async def async_mute(self) -> None:
-        if "MUTE" in self.codes:
-            await self.async_send_function("MUTE")
-        elif "VOLUME_MUTE" in self.codes:
-            await self.async_send_function("VOLUME_MUTE")
-        else:
-            raise UpdateFailed("No MUTE / VOLUME_MUTE in profile")
+        for fn in ("MUTE", "VOLUME_MUTE", "MUTE_TOGGLE"):
+            if fn in self.codes:
+                await self.async_send_function(fn)
+                return
+        raise UpdateFailed("No MUTE / VOLUME_MUTE / MUTE_TOGGLE in profile")
 
     async def async_select_source(self, source: str) -> None:
         await self.async_send_function(source)

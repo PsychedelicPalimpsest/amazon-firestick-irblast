@@ -8,7 +8,7 @@ Native Home Assistant integration that turns a Fire Stick + Amazon Voice Remote 
 - `media_player` (TV power, volume, mute, HDMI inputs) + `remote` (every function in the codeset)
 - Live Amazon IDC TV catalog via a Stick-side Magisk agent (MAP token) — **no vendored IR dump**
 - Only the codeset you select is stored in the config entry
-- Pluggable TV state: HDMI HPD (read-only), ping, HA entity, or assumed
+- Pluggable TV state: DeviceControl screen/TV power (recommended), ping, HDMI HPD, HA entity, or assumed (last resort)
 
 ## Requirements
 
@@ -19,29 +19,73 @@ Native Home Assistant integration that turns a Fire Stick + Amazon Voice Remote 
 
 ## Install
 
+Do this in order: Magisk helper on the Stick first, then the Home Assistant integration.
+
 ### 1. Magisk helper (one-time on the Stick)
 
-From this repo on a machine that can `adb` to the Stick:
+From a machine that can `adb` to the Stick (clone this repo):
 
 ```bash
-cp config.env.example config.env   # set ANDROID_SERIAL
+cp config.env.example config.env   # set ANDROID_SERIAL=HOST:5555
 ./ftvir setup
 adb reboot
 ./ftvir status                     # → ok
 ```
 
-This installs privileged `com.mitch.ftvir` (`AMAZON_REMOTE_DFU`) with InstantFire blast + IDC catalog RPC.
+This installs privileged `com.mitch.ftvir` with InstantFire blast + DeviceControl catalog RPC. Home Assistant will refuse to set up if this package is missing or not privileged.
 
-### 2. HACS / Home Assistant
+### 2. Home Assistant integration
 
-1. Copy `custom_components/firetv_ir` into `/config/custom_components/firetv_ir` (or add this repo as a HACS custom repository, category **Integration**).
-2. Restart Home Assistant.
-3. **Settings → Devices & services → Add integration → Fire TV IR**.
-4. Enter Stick ADB host/port → pick remote → search TV brand → test blast → confirm profile → choose power mode + state source.
+The HA host must be able to reach the Stick on TCP ADB (default `5555`). Enable network debugging on the Stick and approve the HA host’s ADB key when prompted.
 
-### 3. Optional debug CLI
+#### Option A — manual install (copy files)
 
-`./ftvir` remains for install/debug (`status`, `setup`, raw `blast`). Day-to-day control is the integration, not `shell_command`.
+1. Copy the integration folder onto the HA config share:
+
+   ```bash
+   # From this repo → HA config directory
+   mkdir -p /config/custom_components
+   cp -a custom_components/firetv_ir /config/custom_components/
+   ```
+
+   On supervised / HA OS, that is usually the same place as `configuration.yaml` (Samba/SSH add-on: `/config/custom_components/firetv_ir/`).
+
+2. Restart Home Assistant (**Developer tools → YAML → Restart**, or reboot the host).
+
+3. **Settings → Devices & services → Add integration** → search **Fire TV IR**.
+
+4. Complete the Config Flow:
+   - **ADB**: Stick host, port (`5555`), optional path to `adbkey`, or ADB server IP/port if you use a shared `adbd` on the HA host
+   - **Remote**: pick the bonded Amazon Voice Remote (MAC)
+   - **Brand / profile**: search TV brand (e.g. Vizio), or enter a known codeset id; optionally **Test blast**, then **Confirm**
+   - **Power & state**: `discrete` / `toggle_with_state` / `toggle_only`, plus DeviceControl TV state (default), ping, HDMI HPD, or assumed. The androidtv ADB entity preview is Stick awake — not TV power.
+
+5. You should get `media_player.*_tv` and `remote.*_tv` entities.
+
+#### Option B — HACS custom repository
+
+1. Install [HACS](https://hacs.xyz/) if you do not already have it.
+2. HACS → **⋯** → **Custom repositories** → add this repo URL, category **Integration**.
+3. HACS → **Integrations** → find **Fire TV IR** → **Download**.
+4. Restart Home Assistant.
+5. **Settings → Devices & services → Add integration → Fire TV IR** and finish the Config Flow (same as Option A step 4).
+
+### 3. CLI (same engine as HA)
+
+`./ftvir` uses `custom_components/firetv_ir` over ADB (Python). After Magisk setup:
+
+```bash
+cp config.env.example config.env   # ANDROID_SERIAL, FTVIR_MAC, power mode
+./ftvir use-profile 4696           # download + cache TV codeset
+./ftvir buttons                    # list functions
+./ftvir on                         # power on (mode + state)
+./ftvir off
+./ftvir send VOLUME_UP
+./ftvir HDMI_4                     # shorthand for send
+./ftvir brands --filter Vizio
+```
+
+Needs the project venv deps once: `python3 -m venv .venv && .venv/bin/pip install 'adb-shell' 'pure-python-adb'`.
 
 ## Power modes
 
@@ -51,14 +95,18 @@ This installs privileged `com.mitch.ftvir` (`AMAZON_REMOTE_DFU`) with InstantFir
 | `toggle_with_state` | `POWER_TOGGLE` only if state off | `POWER_TOGGLE` only if state on |
 | `toggle_only` | always `POWER_TOGGLE` | always `POWER_TOGGLE` |
 
-Toggle-only brands (e.g. many Vizio profiles) should use **toggle_with_state** plus HDMI-link or ping.
+Toggle-only brands (e.g. many Vizio profiles) should use **toggle_with_state** plus a real state source. Unknown state refuses `POWER_TOGGLE` (no blind toggle).
 
-## State sources (never IR)
+## State sources (never invent from IR)
 
-- **HDMI link** — read-only HPD / sink props on the Stick (no CEC transmits)
-- **Ping** — TV LAN IP from the Stick
-- **HA entity** — another binary_sensor / switch / etc.
-- **Assumed** — last command (weak; last resort)
+- **devicecontrol** (default) — DeviceControl `getScreenState` on the Stick (HPD + fused providers). Read-only; no IR / no CEC sends from us.
+- **ping** — TV LAN IP from the Stick
+- **hdmi_link** — raw HPD sysfs / dumpsys (often empty on tank)
+- **ha_entity** — another binary_sensor / switch / etc.
+- **stick_awake** — Fire Stick `dumpsys power` awake (same class of signal as the androidtv HA preview). **Not TV power.**
+- **assumed** — last command only when explicitly selected (never a silent fallback)
+
+Sending IR never marks the TV on unless `assumed` is the chosen source.
 
 ## Services
 

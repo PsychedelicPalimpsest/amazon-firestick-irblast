@@ -50,6 +50,10 @@ class StickAgent:
         data = await self._rpc("profile", region=self.region, ids=ids)
         return list(data.get("profiles") or [])
 
+    async def tv_state(self) -> dict[str, Any]:
+        """DeviceControl fused screen/TV power (read-only; no IR)."""
+        return await self._rpc("tv_state")
+
     async def blast_json(self, address: str, payload: dict[str, Any]) -> dict[str, Any]:
         remote = "/data/local/tmp/ftvir_blast.json"
         await self._write_remote_json(remote, payload)

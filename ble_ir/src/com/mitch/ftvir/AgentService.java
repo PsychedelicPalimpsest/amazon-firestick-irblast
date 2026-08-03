@@ -55,6 +55,10 @@ public class AgentService extends IntentService {
                 handleBlast(intent);
                 return;
             }
+            if ("tv_state".equals(op) || "screen_state".equals(op)) {
+                RpcIO.ok(DeviceControlCatalog.tvPower(this));
+                return;
+            }
             if ("brands".equals(op) || "profiles".equals(op) || "profile".equals(op)) {
                 handleIdc(op, intent);
                 return;
