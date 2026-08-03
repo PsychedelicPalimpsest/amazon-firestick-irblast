@@ -110,42 +110,53 @@ Sending IR never marks the TV on unless `assumed` is the chosen source.
 
 ## Automations — press any IR button
 
-Three equivalent ways:
+### Remote entity (recommended)
 
-### 1. Select dropdown (easiest in the UI)
+Power and sources use normal HA remote / media_player actions:
 
-Entity `select.*_ir_button` lists every function in the codeset. Selecting an option blasts it.
+```yaml
+# TV power
+action: remote.turn_off
+target:
+  entity_id: remote.YOUR_TV_tv_remote
+
+# Switch HDMI input (activity list = HDMI_* / INPUT_* only)
+action: remote.turn_on
+target:
+  entity_id: remote.YOUR_TV_tv_remote
+data:
+  activity: HDMI_4
+
+# Any codeset function (aliases like volume_up work too)
+action: remote.send_command
+target:
+  entity_id: remote.YOUR_TV_tv_remote
+data:
+  command: volume_up
+```
+
+`remote` attributes: `activity_list` (sources only), `functions` (full codeset for send_command).
+
+### Select dropdown (reduced list)
+
+Entity `select.*_ir_button` lists HDMI/INPUT sources plus common extras (not every codeset button). Full list is in attribute `all_functions`.
 
 ```yaml
 action: select.select_option
 target:
-  entity_id: select.vizio_tv_ir_button   # rename to your entity
+  entity_id: select.YOUR_TV_ir_button
 data:
   option: HDMI_4
 ```
 
-### 2. Remote entity
-
-```yaml
-action: remote.send_command
-target:
-  entity_id: remote.vizio_tv_tv_remote
-data:
-  command: VOLUME_UP
-```
-
-`command` can also be a list to send several buttons in order.
-
-### 3. Domain service
+### Domain service (any function by name)
 
 ```yaml
 action: firetv_ir.send_function
 data:
   function: POWER_TOGGLE
-  entity_id: media_player.vizio_tv_tv
+  entity_id: media_player.YOUR_TV_tv
 ```
-
-Use **Developer tools → States** on the remote or IR button select to see available function names (`options` / `functions` / `activity_list`).
 
 ## Services
 

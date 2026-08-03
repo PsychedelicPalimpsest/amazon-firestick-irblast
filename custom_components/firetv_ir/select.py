@@ -1,4 +1,4 @@
-"""Select entity — dropdown of every IR function in the cached codeset."""
+"""Select entity — reduced dropdown of common IR buttons (not the full codeset)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .buttons import all_functions, select_option_list
 from .const import (
     CONF_BRAND_NAME,
     CONF_CODESET_ID,
@@ -26,11 +27,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: FireTvIrCoordinator = hass.data[DOMAIN][entry.entry_id]
+    if not select_option_list(coordinator.codes):
+        return
     async_add_entities([FireTvIrButtonSelect(coordinator, entry)])
 
 
 class FireTvIrButtonSelect(CoordinatorEntity[FireTvIrCoordinator], SelectEntity):
-    """Pick any codeset function; selecting it blasts that IR button."""
+    """Pick a common codeset function; selecting it blasts that IR button."""
 
     _attr_has_entity_name = True
     _attr_name = "IR button"
@@ -61,14 +64,20 @@ class FireTvIrButtonSelect(CoordinatorEntity[FireTvIrCoordinator], SelectEntity)
 
     @property
     def options(self) -> list[str]:
-        return sorted(self.coordinator.codes.keys())
+        return select_option_list(self.coordinator.codes)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[str]]:
+        return {"all_functions": all_functions(self.coordinator.codes)}
 
     @property
     def current_option(self) -> str | None:
-        if self._current and self._current in self.coordinator.codes:
-            return self._current
         opts = self.options
-        return opts[0] if opts else None
+        if not opts:
+            return None
+        if self._current and self._current in opts:
+            return self._current
+        return opts[0]
 
     async def async_select_option(self, option: str) -> None:
         if option not in self.coordinator.codes:

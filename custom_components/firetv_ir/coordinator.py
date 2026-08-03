@@ -104,11 +104,13 @@ class FireTvIrCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._rebuild_detector()
 
     async def _async_update_data(self) -> dict[str, Any]:
+        is_on: bool | None = None
         try:
             is_on = await self.detector.async_is_on()
         except Exception as exc:  # noqa: BLE001
-            raise UpdateFailed(str(exc)) from exc
-        # Never invent state from our own IR blasts — unknown stays unknown.
+            _LOGGER.warning("TV state read failed: %s", exc)
+            if self.data:
+                is_on = self.data.get("is_on")
         return {"is_on": is_on, "functions": sorted(self.codes.keys())}
 
     async def async_send_function(self, function: str) -> None:

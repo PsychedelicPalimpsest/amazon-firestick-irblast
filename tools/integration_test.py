@@ -20,6 +20,11 @@ from firetv_ir.const import (  # noqa: E402
     POWER_MODE_TOGGLE_ONLY,
     POWER_MODE_TOGGLE_STATE,
 )
+from firetv_ir.buttons import (  # noqa: E402
+    remote_activity_list,
+    resolve_command,
+    select_option_list,
+)
 from firetv_ir.naming import device_title, is_generic_profile_name  # noqa: E402
 from firetv_ir.power import resolve_turn_off, resolve_turn_on  # noqa: E402
 from firetv_ir.pronto import build_instant_fire, pronto_to_raw  # noqa: E402
@@ -98,6 +103,32 @@ def test_power_semantics() -> None:
             ok(name, f"→ {got}")
         else:
             bad(name, f"expected {expect}, got {got}")
+
+
+def test_buttons() -> None:
+    print("\n== buttons ==")
+    codes = {
+        "HDMI_4": {},
+        "HDMI_1": {},
+        "VOLUME_UP": {},
+        "MUTE": {},
+        "0": {},
+        "WEIRD_CODE": {},
+    }
+    acts = remote_activity_list(codes)
+    if acts != ["HDMI_1", "HDMI_4"]:
+        bad("remote_activity_list", str(acts))
+    else:
+        ok("remote_activity_list")
+    sel = select_option_list(codes)
+    if "VOLUME_UP" in sel or "0" in sel:
+        bad("select_option_list excludes volume/digits", str(sel))
+    else:
+        ok("select_option_list reduced", f"{len(sel)} opts")
+    if resolve_command("volume_up", codes) != "VOLUME_UP":
+        bad("resolve_command alias", resolve_command("volume_up", codes))
+    else:
+        ok("resolve_command alias")
 
 
 def test_naming() -> None:
@@ -308,6 +339,7 @@ def main() -> int:
     print("firetv_ir integration test")
     test_pronto()
     test_power_semantics()
+    test_buttons()
     test_naming()
     test_assumed_state()
 
